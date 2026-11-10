@@ -1,0 +1,22 @@
+# Testado com Python 3.13. Versões fixadas para reprodutibilidade.
+pandas==2.3.3
+numpy==2.4.6
+scipy==1.18.1
+matplotlib==3.11.2
+seaborn==0.13.2
+statsmodels==0.15.0
+
+# Modelos de previsão
+lightgbm==4.7.0
+statsforecast==2.1.1
+prophet==1.5.0
+torch==2.15.0
+
+# Explicabilidade
+shap==0.54.1
+
+# Notebooks
+jupyterlab
+ipykernel==7.4.0
+jupytext==1.19.6
+nbconvert==7.17.2
