@@ -13,6 +13,8 @@ outputs/*
 
 # --- Python / Jupyter ---------------------------------------------------
 __pycache__/
+build/
+*.egg-info/
 *.py[cod]
 .ipynb_checkpoints/
 .venv/
