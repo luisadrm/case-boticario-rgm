@@ -9,6 +9,7 @@ Case técnico para a vaga **Data Science Especialista I, RGM**, no **Grupo Botic
 | 1. Análise exploratória com insights (elasticidade promocional, canibalização e outros) | `notebooks/case_rgm_v2.ipynb`, seções 1 e 2 |
 | 2. Modelo preditivo da quantidade vendida (recorte e horizonte próprios) | `notebooks/case_rgm_v2.ipynb`, seção 3 · `docs/relatorio_modelos.md` |
 | 3. Explicabilidade, métricas e grau de confiabilidade das previsões | `notebooks/case_rgm_v2.ipynb`, seção 4 (SHAP, semáforo de confiança) |
+| Previsão reprodutível, fora do notebook | pacote `src/case_rgm/` · `python -m case_rgm.pipeline` |
 
 ## Estrutura do repositório
 
@@ -17,10 +18,20 @@ case-boticario-rgm/
 ├── README.md                          ← este arquivo
 ├── requirements.txt                   ← dependências (versões fixadas)
 ├── .gitignore
-├── .gitlab-ci.yml                     ← verificação do notebook + execução manual
+├── pyproject.toml                     ← instalação do pacote case_rgm (pip install .)
+├── .gitlab-ci.yml                     ← CI no GitLab: verificação + execução manual
+├── .github/workflows/verificar.yml    ← as mesmas verificações no GitHub Actions
 ├── data/
 │   ├── raw/                           ← coloque aqui vendas_sku_semanal.csv (não versionado)
 │   └── processed/                     ← base limpa gerada pelo notebook (não versionado)
+├── src/case_rgm/                      ← PIPELINE DE PREVISÃO (código modular)
+│   ├── config.py                      ← parâmetros: horizonte, LightGBM, limites do semáforo
+│   ├── limpeza.py                     ← tratamentos da base bruta (seção 1 do notebook)
+│   ├── features.py                    ← calendário, promoção dos irmãos, lags e médias recentes
+│   ├── modelo.py                      ← LightGBM P10/P50/P90, backtest e calibração conformal
+│   ├── confianca.py                   ← semáforo de confiança
+│   ├── picos.py                       ← Prophet para a previsão combinada de picos
+│   └── pipeline.py                    ← orquestra tudo, do CSV à previsão
 ├── notebooks/
 │   ├── case_rgm_v2.ipynb              ← NOTEBOOK DO CASE
 │   └── case_rgm_v2.py                 ← mesmo notebook em texto (jupytext), para revisão de código no GitLab
@@ -50,11 +61,27 @@ jupyter lab notebooks/case_rgm_v2.ipynb
 - A execução completa leva **~10 minutos** em 2 CPUs. A parte mais lenta é o backtest de ARIMA, Prophet e LSTM (seção 3.4).
 - O notebook grava `data/processed/vendas_limpo.csv` e `outputs/previsao_4_semanas.csv`.
 
+### Pipeline (sem notebook)
+
+O caminho de produção do notebook (limpeza → features → LightGBM → faixa calibrada → semáforo) está no pacote `src/case_rgm/`:
+
+```bash
+pip install ".[picos]"             # sem o Prophet: pip install .
+python -m case_rgm.pipeline --dados data/raw/vendas_sku_semanal.csv --saida outputs
+python -m case_rgm.pipeline --dados ... --sem-prophet    # pula a previsão combinada para picos
+```
+
+Gera em `outputs/`: `previsao_4_semanas.csv` (previsão, faixa provável, alertas e semáforo por série e semana), `metricas_backtest.json` (erro, viés e cobertura nos dois backtests e as folgas da faixa) e `log_limpeza.csv`. Roda em ~15 segundos. A previsão é idêntica à do notebook; a faixa difere em até 1 unidade, porque o notebook calibra a folga só nas linhas em que os 4 modelos têm previsão.
+
+A análise exploratória, a econometria e a comparação dos 4 modelos continuam no notebook.
+
+**Integração contínua:** a cada push, o GitHub Actions (e o GitLab CI) confere se o notebook e o `.py` estão sincronizados, se o código compila e se o pacote instala e importa. Como a base não é versionada, o pipeline completo roda sob demanda: cadastre o CSV em base64 no segredo `DADOS_VENDAS_B64` e use **Actions → verificar → Run workflow**, marcando "Rodar o pipeline completo".
+
 **Notebook pareado (jupytext):** o `.ipynb` tem um `.py` equivalente em formato *percent*. Edite qualquer um e sincronize com `jupytext --sync notebooks/case_rgm_v2.ipynb`. Assim, as revisões de *merge request* no GitLab mostram diffs legíveis do código, sem o JSON do notebook.
 
 ## Abordagem
 
-### 1. Limpeza (Dia 1)
+### 1. Limpeza
 Problemas encontrados e tratados, todos registrados num log com flags por linha:
 - datas em dois formatos;
 - duplicatas exatas e conflitantes;
