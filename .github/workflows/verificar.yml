@@ -1,6 +1,7 @@
-# GitHub Actions: mesma verificação do .gitlab-ci.yml (job "verificar").
-# Confere se o notebook (.ipynb) e a versão em texto (.py) estão sincronizados
-# e se o código compila. Roda a cada push e pull request na main.
+# GitHub Actions: mesmas verificações do .gitlab-ci.yml.
+#  - verificar: notebook (.ipynb) e versão em texto (.py) sincronizados; código do notebook e do pacote compila.
+#  - pacote: instala o pacote case_rgm e confere que todos os módulos importam e a linha de comando responde.
+#  - pipeline (manual): roda o pipeline com a base real, guardada no segredo DADOS_VENDAS_B64 (CSV em base64).
 name: verificar
 
 on:
@@ -9,24 +10,64 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      rodar_pipeline:
+        description: "Rodar o pipeline completo com a base do segredo DADOS_VENDAS_B64"
+        type: boolean
+        default: false
 
 jobs:
   verificar:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-
       - name: Instalar jupytext
         run: pip install --quiet jupytext==1.19.6
-
       - name: Notebook e .py sincronizados
         run: |
           jupytext --to py:percent -o /tmp/case_rgm_v2.py notebooks/case_rgm_v2.ipynb
           diff -q /tmp/case_rgm_v2.py notebooks/case_rgm_v2.py || (echo "Notebook e .py fora de sincronia. Rode 'jupytext --sync notebooks/case_rgm_v2.ipynb'" && exit 1)
-
       - name: Código compila
-        run: python -m py_compile notebooks/case_rgm_v2.py
+        run: python -m compileall -q notebooks/case_rgm_v2.py src
+
+  pacote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar o pacote
+        run: pip install --quiet .
+      - name: Módulos importam e a linha de comando responde
+        run: |
+          python -c "import case_rgm.limpeza, case_rgm.features, case_rgm.modelo, case_rgm.confianca, case_rgm.picos, case_rgm.pipeline"
+          python -m case_rgm.pipeline --help
+
+  pipeline:
+    if: github.event_name == 'workflow_dispatch' && inputs.rodar_pipeline
+    needs: [verificar, pacote]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar o pacote com Prophet
+        run: pip install --quiet ".[picos]"
+      - name: Recuperar a base do segredo
+        env:
+          DADOS_VENDAS_B64: ${{ secrets.DADOS_VENDAS_B64 }}
+        run: |
+          test -n "$DADOS_VENDAS_B64" || (echo "Cadastre o segredo DADOS_VENDAS_B64 (CSV em base64) nas configurações do repositório." && exit 1)
+          mkdir -p data/raw && echo "$DADOS_VENDAS_B64" | base64 -d > data/raw/vendas_sku_semanal.csv
+      - name: Rodar o pipeline
+        run: python -m case_rgm.pipeline --dados data/raw/vendas_sku_semanal.csv --saida outputs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: previsao
+          path: outputs/
+          retention-days: 14
