@@ -3,15 +3,14 @@
 #
 # **Objetivo:** entender a demanda semanal por SKU e canal, medir o efeito de preço e promoções, prever a quantidade vendida e comunicar quão confiável é cada previsão.
 #
-# | Etapa | O que este notebook faz | Seção |
-# |---|---|---|
-# | Dia 1 | Limpeza: datas, duplicatas, valores impossíveis e NaN | 1 |
-# | Dias 2–3 | EDA de RGM: sazonalidade, ruptura, elasticidade, ROI por tipo de desconto, canibalização | 2 |
-# | Dias 4–5 | Quatro modelos de previsão (ARIMA, Prophet, LSTM, LightGBM) no mesmo backtest, com **prós e contras** | 3 |
-# | Dia 6 | Explicabilidade (SHAP), métricas e semáforo de confiabilidade | 4 |
-# | Dia 7 | Roteiro de storytelling e perguntas prováveis da banca | 5 |
+# | Seção | O que este notebook faz |
+# |---|---|
+# | 1 | Limpeza: datas, duplicatas, valores impossíveis e NaN |
+# | 2 | EDA de RGM: sazonalidade, ruptura, elasticidade, ROI por tipo de desconto, canibalização |
+# | 3 | Quatro modelos de previsão (ARIMA, Prophet, LSTM, LightGBM) no mesmo backtest, com **prós e contras** |
+# | 4 | Explicabilidade (SHAP), métricas e semáforo de confiabilidade |
 #
-# > **Como estudar este notebook:** cada bloco segue a sequência *diagnóstico → opções → decisão → código → verificação*. Na entrevista, a banca costuma valorizar mais o **porquê** de cada decisão do que o código em si.
+# > **Como ler este notebook:** cada bloco segue a sequência *diagnóstico → opções → decisão → código → verificação*.
 
 # %%
 import warnings
@@ -38,7 +37,7 @@ FLAGS = ["flag_desconto_direto", "flag_combo", "flag_pague_e_leve"]
 
 # %% [markdown]
 # ---
-# # 1. Dia 1: Limpeza e base analítica
+# # 1. Limpeza e base analítica
 #
 # ## 1.0 Princípios que vou seguir
 #
@@ -288,7 +287,7 @@ df.loc[df["qt_vendida"].isna(), CHAVE + ["qt_vendida", "receita", "preco_medio",
 # %% [markdown]
 # ## 1.6 Zeros suspeitos: o NaN que se disfarça de zero
 #
-# Este é o ponto mais sutil do Dia 1. Uma semana com `qt_vendida = 0` pode ser:
+# Este é o ponto mais sutil da limpeza. Uma semana com `qt_vendida = 0` pode ser:
 # 1. **Zero legítimo por ruptura:** não vendeu porque faltou estoque (`qt_ruptura > 0`). Esse é um caso de **demanda censurada**, e o zero é real.
 # 2. **Zero legítimo por baixa demanda:** é plausível em SKUs de giro muito baixo.
 # 3. **Registro faltante gravado como zero:** o sistema não carregou a semana. Na prática é um NaN, e tratá-lo como venda zero **puxa a média para baixo** e ensina o modelo a prever quedas que não existem.
@@ -318,7 +317,7 @@ print("Algum zero suspeito tinha promoção ativa?", tab_z.loc[tab_z["tipo"].str
 # %% [markdown]
 # **Conclusão:** mesmo no SKU de menor giro, a chance de vender zero por acaso é praticamente nula. Os zeros **sem ruptura** são, com alta probabilidade, **semanas não registradas**, e passam a ser **NaN** com flag. Já os zeros **com ruptura** são mantidos, porque contam uma história real de falta de estoque.
 #
-# *Para a banca:* "Não tratei zero como zero automaticamente. Testei se o zero era plausível dado o nível da série. Com Poisson, P(0) ≈ 0 em todos os casos sem ruptura."
+# *Em resumo:* "Não tratei zero como zero automaticamente. Testei se o zero era plausível dado o nível da série. Com Poisson, P(0) ≈ 0 em todos os casos sem ruptura."
 #
 # *Ressalva honesta:* Poisson subestima a variância (a demanda real é sobredispersa). Mesmo com uma Binomial Negativa, porém, um zero numa série que vende dezenas por semana continuaria improvável.
 
@@ -471,7 +470,7 @@ df.to_csv(DIR_PROCESSADOS / "vendas_limpo.csv", index=False)
 print("Base limpa salva:", df.shape)
 # %% [markdown]
 # ---
-# # 2. Dias 2–3: Análise exploratória com olhar de RGM
+# # 2. Análise exploratória com olhar de RGM
 #
 # RGM (*Revenue Growth Management*) responde a quatro perguntas: **preço** (quanto o volume reage a preço?), **promoção** (qual tipo de desconto dá retorno?), **mix/portfólio** (um produto rouba venda do outro?) e **execução** (perdemos venda por falta de estoque?). A EDA abaixo segue essas perguntas.
 
@@ -961,7 +960,7 @@ pd.Series({
 
 # %% [markdown]
 # **O que as checagens mostram:**
-# 1. **Na CAT_A, os irmãos fazem promoção em rodízio:** o preço de um sobe quando o do outro cai (correlação de −0,3 a −0,55), e as semanas com os dois em promoção são **menos frequentes** do que o acaso daria. Isso tem uma consequência técnica importante: o efeito do **preço próprio** e o do **preço do irmão** ficam **parcialmente colineares**. Quando o SKU está em promoção, o irmão geralmente não está, e vice-versa. O modelo identifica bem o **efeito total do rodízio**, mas a **divisão** entre "elasticidade própria" e "canibalização" depende da especificação. É por isso que a elasticidade da CAT_A cai de −1,7 (sem termo de irmão) para −1,0/−1,3 quando a promoção do irmão entra no modelo (seção 2.7): parte do que parecia resposta ao próprio preço era o irmão **saindo** de promoção. *Para a banca, essa é a ressalva mais importante sobre os números de elasticidade.*
+# 1. **Na CAT_A, os irmãos fazem promoção em rodízio:** o preço de um sobe quando o do outro cai (correlação de −0,3 a −0,55), e as semanas com os dois em promoção são **menos frequentes** do que o acaso daria. Isso tem uma consequência técnica importante: o efeito do **preço próprio** e o do **preço do irmão** ficam **parcialmente colineares**. Quando o SKU está em promoção, o irmão geralmente não está, e vice-versa. O modelo identifica bem o **efeito total do rodízio**, mas a **divisão** entre "elasticidade própria" e "canibalização" depende da especificação. É por isso que a elasticidade da CAT_A cai de −1,7 (sem termo de irmão) para −1,0/−1,3 quando a promoção do irmão entra no modelo (seção 2.7): parte do que parecia resposta ao próprio preço era o irmão **saindo** de promoção. *Essa é a ressalva mais importante sobre os números de elasticidade.*
 # 2. **Não há estocagem visível:** a semana seguinte a uma promoção vende o normal (1,0×). A granularidade semanal não esconde um "vale pós-promoção", então não é preciso modelar dinâmica de estoque do consumidor.
 # 3. **Não há canibalização entre canais:** quando o outro canal está em promoção, a demanda deste fica no nível normal (~1,0×, até +2%). A premissa "substituição só dentro do canal" se sustenta. Como ~53% das promoções são sincronizadas entre canais, parte da comparação Loja × VD vem de promoções simultâneas, o que ajuda a compará-los em condições iguais.
 
@@ -1034,7 +1033,7 @@ info.groupby("categoria")[["semanas", "semanas_promo", "dp_log_preco"]].median()
 # 10. **Canais:** a canibalização é igual em Loja e VD. Para elasticidade, os dados não permitem afirmar diferença entre canais (seção 2.7). A recomendação é **testar** (A/B de preço por canal) antes de diferenciar a política de preços.
 # %% [markdown]
 # ---
-# # 3. Dias 4–5: Previsão de demanda: quatro modelos lado a lado
+# # 3. Previsão de demanda: quatro modelos lado a lado
 #
 # ## 3.1 Desenho comum (igual para os 4 modelos, para a comparação ser justa)
 #
@@ -1481,7 +1480,7 @@ bt = aplicar_folga(cmp_ma, Q_CONFORMAL)     # usado no semáforo (seção 4)
 # *Ressalva:* as coberturas "depois" são medidas na própria amostra usada para calibrar, então são uma checagem de consistência, não uma validação independente.
 # %% [markdown]
 # ---
-# # 4. Dia 6: Previsão final, explicabilidade e semáforo de confiança
+# # 4. Previsão final, explicabilidade e semáforo de confiança
 #
 # ## 4.1 Modelo final e previsão das próximas 4 semanas
 #
@@ -1566,7 +1565,7 @@ ax.set_title("O que move a previsão de demanda?")
 plt.show()
 
 # %%
-# Detalhe técnico (para a banca técnica): importância por feature individual
+# Detalhe técnico (para leitores técnicos): importância por feature individual
 shap.summary_plot(sv.values, amostra[FEATURES], max_display=15, show=False)
 plt.title("SHAP — 15 features mais importantes"); plt.show()
 
@@ -1656,7 +1655,7 @@ pd.DataFrame([
 # - 🔵 **Confiável:** 0 ou 1 alerta. *Pode usar o número direto.*
 # - 🔴 **Atenção:** 2 ou mais alertas. *Planeje pela faixa, não pelo número, e revise com o time comercial.*
 #
-# **Por que dois níveis e não três:** numa primeira versão havia um nível intermediário (1 alerta), mas no backtest ele errava praticamente o mesmo que o nível sem alertas (~13–14%). Três cores que os dados não separam só confundem quem usa. **Como o limite foi escolhido:** testei o corte em 1 e em 2 alertas; com corte em 1, 64% das previsões ficariam vermelhas (alarme demais); com corte em 2, o vermelho cobre ~40% e concentra o erro. Na entrevista: *"o semáforo não é opinião, ele foi validado fora da amostra."*
+# **Por que dois níveis e não três:** numa primeira versão havia um nível intermediário (1 alerta), mas no backtest ele errava praticamente o mesmo que o nível sem alertas (~13–14%). Três cores que os dados não separam só confundem quem usa. **Como o limite foi escolhido:** testei o corte em 1 e em 2 alertas; com corte em 1, 64% das previsões ficariam vermelhas (alarme demais); com corte em 2, o vermelho cobre ~40% e concentra o erro. Ou seja: *o semáforo não é opinião, ele foi validado fora da amostra.*
 
 # %%
 wape_serie = bt.groupby("serie").apply(lambda g: wape(g["demanda"], g["p50"])).rename("erro_hist")
@@ -1823,51 +1822,3 @@ plt.tight_layout(); plt.show()
 # 3. **Explicar o modelo ≠ explicar o mundo**, igual ao SHAP de árvores.
 #
 # **Conclusão:** dá para explicar o LSTM, e a explicação é coerente com a do LightGBM. Mas ela é mais cara, menos precisa e menos estável, o que reforça a escolha do LightGBM como modelo principal e do LSTM como candidato.
-# %% [markdown]
-# ---
-# # 5. Dia 7: Storytelling e preparação para a banca
-#
-# ## 5.1 Roteiro sugerido da apresentação (15–20 min)
-#
-# 1. **O problema em uma frase (1 min):** "prever quanto cada SKU vai vender por canal nas próximas 4 semanas, e dizer o quanto confiar nessa previsão, para planejar promoção e estoque".
-# 2. **Os dados contam mentiras pequenas (2 min):** mostrar o log de tratamentos. O destaque é o **zero suspeito** (71 semanas que pareciam "venda zero" e eram registro faltante) e a **demanda censurada** pela ruptura.
-# 3. **O que move a demanda (5 min), com 4 gráficos:** sazonalidade → elasticidade por categoria → matriz volume × lucro dos tipos de desconto → canibalização na CAT_A.
-# 4. **Os modelos (5 min):** os 4 candidatos (ARIMA, Prophet, LSTM, LightGBM) com o mesmo backtest, a tabela de resultados (mai–out e Q4), **prós e contras de cada um** (o slide central) e a escolha: LightGBM no dia a dia e LightGBM + Prophet nos picos.
-# 5. **Confiança (3 min):** a faixa calibrada e o semáforo validado no backtest. Mostrar a frase de explicação de uma previsão de Black Friday.
-# 6. **Recomendações e próximos passos (2 min).**
-#
-# ## 5.2 Recomendações de negócio
-#
-# - **Repensar a profundidade dos descontos:** nenhum tipo de desconto se paga em lucro bruto semanal. Testar descontos de 10–15% contra os atuais ~28%.
-# - **Na CAT_B e CAT_C (inelásticas), trocar desconto direto por combo/pague-e-leve**, que entregam 2–3× mais volume com desconto parecido.
-# - **Na CAT_A, avaliar promoções no nível da subcategoria**, porque parte do uplift vem do irmão.
-# - **Abastecer antes das promoções e datas de pico:** a chance de ruptura dobra nessas semanas. A previsão de 4 semanas serve exatamente para isso.
-# - **Validar a margem com Finanças**, já que ela não reage ao desconto na base.
-#
-# ## 5.3 Próximos passos técnicos (mostra visão de produto de dados)
-#
-# - **Modelos diretos por horizonte** (t+1 com lag 1 etc.), para ganhar precisão nas semanas mais próximas.
-# - **Elasticidade por SKU com modelo bayesiano hierárquico** (ex.: `pypricing`), para precificação fina.
-# - **Demanda censurada de verdade:** a ruptura informada pode ser estimada. Modelos Tobit ou de sobrevivência tratariam semanas de ruptura total.
-# - **Hierarquia e reconciliação:** garantir que a soma das previsões por SKU bata com a da categoria (MinT, *top-down*).
-# - **Experimentos (A/B por região)** para medir elasticidade e canibalização de forma causal e calibrar o modelo.
-# - **Em produção (MLOps):** retreino semanal orquestrado; monitoramento de **data drift** (distribuição de preço, desconto e mix de tipos de desconto, via PSI) e de **concept drift** (WAPE e cobertura da faixa por janela, com alerta se a cobertura cair abaixo de ~70%); versionamento do modelo e do log de tratamentos.
-#
-# ## 5.4 Perguntas prováveis da banca (e respostas curtas)
-#
-# | Pergunta | Resposta |
-# |---|---|
-# | Por que não usou split aleatório? | Em série temporal, vazaria o futuro para o treino. Usei backtest com origem móvel, que simula o uso real. |
-# | Por que prever demanda e não venda? | A venda é censurada pela ruptura. Prever venda ensinaria o modelo a repetir a falta de estoque. |
-# | Por que transformou zeros em NaN? | Testei a plausibilidade: P(0) por Poisson ≈ 0 em todas as semanas sem ruptura e sem promoção. Eram registros faltantes. Deixei flag e posso mostrar a sensibilidade. |
-# | Como sabe que a elasticidade não está viesada? | Efeitos fixos de série e de semana controlam o tipo de produto e a sazonalidade. Mesmo assim, preço não é aleatório, e o ideal seria validar com experimento. |
-# | Por que LightGBM e não ARIMA, Prophet ou LSTM? | Testei os quatro no mesmo backtest. LightGBM e LSTM empataram no ano (~15%), e o LSTM foi melhor no Q4. Fiquei com o LightGBM como modelo principal porque ele é explicável (SHAP), serve de simulador, é estável e roda em segundos. Nos picos, a combinação com o Prophet corrige parte da subestimação. O ETS, testado antes, foi o pior: não enxerga promoção nem evento. |
-# | Por que WAPE e não MAPE? | O MAPE explode em SKUs de baixo volume e trata 1 unidade de erro num SKU pequeno como tão grave quanto 100 no SKU_01. O WAPE pondera pelo volume. |
-# | O que é a "faixa" e por que confiar nela? | São os quantis 10 e 90. Calibrei com conformal, e no backtest ela contém o real em ~80% das semanas, como prometido. |
-# | Como o modelo lida com um lançamento? | Ele usa o padrão de produtos parecidos (categoria/subcategoria) e o histórico curto. O semáforo marca "atenção" até ~26 semanas. |
-# | O que faria com mais tempo/dados? | Estoque disponível, preço de concorrentes, investimento em mídia, dados de consultoras (VD), clima e um calendário de campanhas oficial. |
-# | O modelo foi validado na época em que será usado? | Primeiro não, porque o backtest original era de mai–out. Rodei um segundo backtest no Q4/25: o erro sobe para ~21%, e os picos são subestimados porque só existe uma BF anterior no histórico. Por isso, a faixa é mais larga e há um alerta nas datas comemorativas. |
-# | A elasticidade é diferente entre canais? | As estimativas pontuais diferem um pouco, mas a diferença não é significativa, e o efeito mínimo detectável (~0,5–0,8) é grande. Não dá para afirmar nem igualdade nem diferença. Recomendo um teste A/B por canal. A canibalização, essa sim, é igual nos dois canais. |
-# | Testou LSTM? | Sim. Uma LSTM global pequena, com as mesmas covariáveis do LightGBM, empatou com ele em mai–out e foi melhor no Q4. Não a adotei ainda: explicar a previsão é mais difícil, os hiperparâmetros não foram ajustados, ela varia entre execuções e foi validada em um único Q4. Ela é a candidata à próxima versão. A lição é que o desenho do problema (modelo global, alvo relativo, calendário futuro) importou mais que o algoritmo. |
-# | Por que modelar em SKU × canal e não agregar? | Pelo critério de Syntetos-Boylan, as séries são suaves já nesse nível. Agregar não reduz a variabilidade e esconderia decisões tomadas por SKU. Mas reporto o erro em vários níveis. |
-# | E se o desempenho cair em produção? | Monitoro WAPE e cobertura por janela (concept drift) e as distribuições de entrada (data drift). Retreino com gatilho por alerta, não só por calendário. |
