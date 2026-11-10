@@ -18,6 +18,14 @@ verificar:
     - jupytext --to py:percent -o /tmp/case_rgm_v2.py notebooks/case_rgm_v2.ipynb
     - diff -q /tmp/case_rgm_v2.py notebooks/case_rgm_v2.py || (echo "Notebook e .py fora de sincronia. Rode 'jupytext --sync notebooks/case_rgm_v2.ipynb'" && exit 1)
     - python -m py_compile notebooks/case_rgm_v2.py
+    - python -m compileall -q src
+
+pacote:
+  stage: verificar
+  script:
+    - pip install --quiet .
+    - python -c "import case_rgm.limpeza, case_rgm.features, case_rgm.modelo, case_rgm.confianca, case_rgm.picos, case_rgm.pipeline"
+    - python -m case_rgm.pipeline --help
 
 executar_notebook:
   stage: executar
@@ -25,8 +33,10 @@ executar_notebook:
   timeout: 45m
   script:
     - test -n "$DADOS_VENDAS" || (echo "Defina a variável de CI DADOS_VENDAS (tipo arquivo) com a base do case" && exit 1)
-    - cp "$DADOS_VENDAS" data/raw/vendas_sku_semanal.csv
+    - mkdir -p data/raw && cp "$DADOS_VENDAS" data/raw/vendas_sku_semanal.csv
     - pip install --quiet -r requirements.txt
+    - pip install --quiet ".[picos]"
+    - python -m case_rgm.pipeline --dados data/raw/vendas_sku_semanal.csv --saida outputs
     - cd notebooks && jupyter nbconvert --to notebook --execute case_rgm_v2.ipynb --output case_rgm_v2_executado.ipynb --ExecutePreprocessor.timeout=2400
   artifacts:
     paths:
